@@ -27,7 +27,7 @@ class PSSH:
         try:
             pssh = parse_boxes(data)[0]
         except Exception as e:
-            print(e)
+            #print(e)
             try:
                 widevine_pssh_data = WidevinePsshData()
                 widevine_pssh_data.ParseFromString(data)

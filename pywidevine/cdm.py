@@ -322,7 +322,7 @@ class Cdm:
             # as you can see in the real example, it is stored as uppercase hex and re-encoded
             # it's really 16 bytes of data, but it's stored as a 32-char HEX string (32 bytes)
             request_id = binascii.hexlify(request_id).upper()
-            print('request_id=%r' % request_id)
+            #print('request_id=%r' % request_id)
         else:
             request_id = get_random_bytes(16)
 
