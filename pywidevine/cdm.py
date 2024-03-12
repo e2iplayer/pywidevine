@@ -1,20 +1,16 @@
-from __future__ import annotations
 
 import base64
 import binascii
 import random
-import subprocess
 import sys
 import time
-from pathlib import Path
-from typing import Optional, Union
 from uuid import UUID
 
 from Crypto.Cipher import AES, PKCS1_OAEP
 from Crypto.Hash import CMAC, HMAC, SHA1, SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Random import get_random_bytes
-from Crypto.Signature import pss
+from Crypto.Signature import PKCS1_PSS as pss
 from Crypto.Util import Padding
 from google.protobuf.message import DecodeError
 
@@ -27,13 +23,14 @@ from pywidevine.license_protocol_pb2 import (ClientIdentification, DrmCertificat
                                              SignedMessage)
 from pywidevine.pssh import PSSH
 from pywidevine.session import Session
-from pywidevine.utils import get_binary_path
+
+from pywidevine.utils import to_bytes
 
 
 class Cdm:
     uuid = UUID(bytes=b"\xed\xef\x8b\xa9\x79\xd6\x4a\xce\xa3\xc8\x27\xdc\xd5\x1d\x21\xed")
-    urn = f"urn:uuid:{uuid}"
-    key_format = urn
+    urn = "urn:uuid:{0}"
+    key_format = urn.format(uuid)
     service_certificate_challenge = b"\x08\x04"
     common_privacy_cert = (
         # Used by Google's production license server (license.google.com)
@@ -79,39 +76,33 @@ class Cdm:
 
     def __init__(
         self,
-        device_type: Union[DeviceTypes, str],
-        system_id: int,
-        security_level: int,
-        client_id: ClientIdentification,
-        rsa_key: RSA.RsaKey
+        device_type,
+        system_id,
+        security_level,
+        client_id,
+        rsa_key
     ):
         """Initialize a Widevine Content Decryption Module (CDM)."""
         if not device_type:
             raise ValueError("Device Type must be provided")
-        if isinstance(device_type, str):
-            device_type = DeviceTypes[device_type]
-        if not isinstance(device_type, DeviceTypes):
-            raise TypeError(f"Expected device_type to be a {DeviceTypes!r} not {device_type!r}")
 
         if not system_id:
             raise ValueError("System ID must be provided")
         if not isinstance(system_id, int):
-            raise TypeError(f"Expected system_id to be a {int} not {system_id!r}")
+            raise TypeError("Expected system_id to be a {0} not {1}".format(int, system_id))
 
         if not security_level:
             raise ValueError("Security Level must be provided")
         if not isinstance(security_level, int):
-            raise TypeError(f"Expected security_level to be a {int} not {security_level!r}")
+            raise TypeError("Expected security_level to be a {0} not {1}".format(int, security_level))
 
         if not client_id:
             raise ValueError("Client ID must be provided")
         if not isinstance(client_id, ClientIdentification):
-            raise TypeError(f"Expected client_id to be a {ClientIdentification} not {client_id!r}")
+            raise TypeError("Expected client_id to be a {0} not {1}".format(ClientIdentification, client_id))
 
         if not rsa_key:
             raise ValueError("RSA Key must be provided")
-        if not isinstance(rsa_key, RSA.RsaKey):
-            raise TypeError(f"Expected rsa_key to be a {RSA.RsaKey} not {rsa_key!r}")
 
         self.device_type = device_type
         self.system_id = system_id
@@ -121,10 +112,10 @@ class Cdm:
         self.__signer = pss.new(rsa_key)
         self.__decrypter = PKCS1_OAEP.new(rsa_key)
 
-        self.__sessions: dict[bytes, Session] = {}
+        self.__sessions = {}
 
     @classmethod
-    def from_device(cls, device: Device) -> Cdm:
+    def from_device(cls, device):
         """Initialize a Widevine CDM from a Widevine Device (.wvd) file."""
         return cls(
             device_type=device.type,
@@ -134,22 +125,22 @@ class Cdm:
             rsa_key=device.private_key
         )
 
-    def open(self) -> bytes:
+    def open(self):
         """
         Open a Widevine Content Decryption Module (CDM) session.
 
         Raises:
             TooManySessions: If the session cannot be opened as limit has been reached.
         """
-        if len(self.__sessions) > self.MAX_NUM_OF_SESSIONS:
-            raise TooManySessions(f"Too many Sessions open ({self.MAX_NUM_OF_SESSIONS}).")
+        if len(self.__sessions):
+            raise TooManySessions("Too many Sessions open ({0}).".format(self.MAX_NUM_OF_SESSIONS))
 
         session = Session(len(self.__sessions) + 1)
         self.__sessions[session.id] = session
 
         return session.id
 
-    def close(self, session_id: bytes) -> None:
+    def close(self, session_id):
         """
         Close a Widevine Content Decryption Module (CDM) session.
 
@@ -161,10 +152,10 @@ class Cdm:
         """
         session = self.__sessions.get(session_id)
         if not session:
-            raise InvalidSession(f"Session identifier {session_id!r} is invalid.")
+            raise InvalidSession("Session identifier {0} is invalid.".format(session_id))
         del self.__sessions[session_id]
 
-    def set_service_certificate(self, session_id: bytes, certificate: Optional[Union[bytes, str]]) -> Optional[str]:
+    def set_service_certificate(self, session_id, certificate):
         """
         Set a Service Privacy Certificate for Privacy Mode. (optional but recommended)
 
@@ -196,7 +187,7 @@ class Cdm:
         """
         session = self.__sessions.get(session_id)
         if not session:
-            raise InvalidSession(f"Session identifier {session_id!r} is invalid.")
+            raise InvalidSession("Session identifier {0} is invalid.".format(session_id))
 
         if certificate is None:
             if session.service_certificate:
@@ -214,7 +205,7 @@ class Cdm:
             except binascii.Error:
                 raise DecodeError("Could not decode certificate string as Base64, expected bytes.")
         elif not isinstance(certificate, bytes):
-            raise DecodeError(f"Expecting Certificate to be bytes, not {certificate!r}")
+            raise DecodeError("Expecting Certificate to be bytes, not {0}".format(certificate))
 
         signed_message = SignedMessage()
         signed_drm_certificate = SignedDrmCertificate()
@@ -234,7 +225,7 @@ class Cdm:
                     raise DecodeError("partial parse")
         except DecodeError as e:
             # could be a direct unsigned DrmCertificate, but reject those anyway
-            raise DecodeError(f"Could not parse certificate as a SignedDrmCertificate, {e}")
+            raise DecodeError("Could not parse certificate as a SignedDrmCertificate, {0}".format(e))
 
         try:
             pss. \
@@ -251,14 +242,14 @@ class Cdm:
             if drm_certificate.SerializeToString() != signed_drm_certificate.drm_certificate:
                 raise DecodeError("partial parse")
         except DecodeError as e:
-            raise DecodeError(f"Could not parse signed certificate's message as a DrmCertificate, {e}")
+            raise DecodeError("Could not parse signed certificate's message as a DrmCertificate, {0}".format(e))
 
         # must be stored as a SignedDrmCertificate as the signature needs to be kept for RemoteCdm
         # if we store as DrmCertificate (no signature) then RemoteCdm cannot verify the Certificate
         session.service_certificate = signed_drm_certificate
         return drm_certificate.provider_id
 
-    def get_service_certificate(self, session_id: bytes) -> Optional[SignedDrmCertificate]:
+    def get_service_certificate(self, session_id):
         """
         Get the currently set Service Privacy Certificate of the Session.
 
@@ -272,17 +263,17 @@ class Cdm:
         """
         session = self.__sessions.get(session_id)
         if not session:
-            raise InvalidSession(f"Session identifier {session_id!r} is invalid.")
+            raise InvalidSession("Session identifier {0} is invalid.".format(session_id))
 
         return session.service_certificate
 
     def get_license_challenge(
         self,
-        session_id: bytes,
-        pssh: PSSH,
-        license_type: str = "STREAMING",
-        privacy_mode: bool = True
-    ) -> bytes:
+        session_id,
+        pssh,
+        license_type = "STREAMING",
+        privacy_mode = True
+    ):
         """
         Get a License Request (Challenge) to send to a License Server.
 
@@ -308,19 +299,18 @@ class Cdm:
         """
         session = self.__sessions.get(session_id)
         if not session:
-            raise InvalidSession(f"Session identifier {session_id!r} is invalid.")
+            raise InvalidSession("Session identifier {0} is invalid.".format(session_id))
 
         if not pssh:
             raise InvalidInitData("A pssh must be provided.")
         if not isinstance(pssh, PSSH):
-            raise InvalidInitData(f"Expected pssh to be a {PSSH}, not {pssh!r}")
+            raise InvalidInitData("Expected pssh to be a {0}, not {1}".format(PSSH, pssh))
 
         if not isinstance(license_type, str):
-            raise InvalidLicenseType(f"Expected license_type to be a {str}, not {license_type!r}")
+            raise InvalidLicenseType("Expected license_type to be a {0}, not {1}".format(str, license_type))
         if license_type not in LicenseType.keys():
             raise InvalidLicenseType(
-                f"Invalid license_type value of '{license_type}'. "
-                f"Available values: {LicenseType.keys()}"
+                "Invalid license_type value of '{0}'. Available values: {1}".format(license_type, LicenseType.keys())
             )
 
         if self.device_type == DeviceTypes.ANDROID:
@@ -328,10 +318,11 @@ class Cdm:
             # Bytes 5-8 does not seem random, in real tests they have been consecutive \x00 or \xFF
             # Real example: A0DCE548000000000500000000000000
             request_id = (get_random_bytes(4) + (b"\x00" * 4))  # (?)
-            request_id += session.number.to_bytes(8, "little")  # counter
+            request_id += to_bytes(session.number, 8, 'little') # counter
             # as you can see in the real example, it is stored as uppercase hex and re-encoded
             # it's really 16 bytes of data, but it's stored as a 32-char HEX string (32 bytes)
-            request_id = request_id.hex().upper().encode()
+            request_id = binascii.hexlify(request_id).upper()
+            print('request_id=%r' % request_id)
         else:
             request_id = get_random_bytes(16)
 
@@ -366,7 +357,7 @@ class Cdm:
 
         return signed_license_request
 
-    def parse_license(self, session_id: bytes, license_message: Union[SignedMessage, bytes, str]) -> None:
+    def parse_license(self, session_id, license_message):
         """
         Load Keys from a License Message from a License Server Response.
 
@@ -390,16 +381,10 @@ class Cdm:
         """
         session = self.__sessions.get(session_id)
         if not session:
-            raise InvalidSession(f"Session identifier {session_id!r} is invalid.")
+            raise InvalidSession("Session identifier {0} is invalid.".format(session_id))
 
         if not license_message:
             raise InvalidLicenseMessage("Cannot parse an empty license_message")
-
-        if isinstance(license_message, str):
-            try:
-                license_message = base64.b64decode(license_message)
-            except (binascii.Error, binascii.Incomplete) as e:
-                raise InvalidLicenseMessage(f"Could not decode license_message as Base64, {e}")
 
         if isinstance(license_message, bytes):
             signed_message = SignedMessage()
@@ -408,16 +393,15 @@ class Cdm:
                 if signed_message.SerializeToString() != license_message:
                     raise DecodeError(license_message)
             except DecodeError as e:
-                raise InvalidLicenseMessage(f"Could not parse license_message as a SignedMessage, {e}")
+                raise InvalidLicenseMessage("Could not parse license_message as a SignedMessage, {0}".format(e))
             license_message = signed_message
 
         if not isinstance(license_message, SignedMessage):
-            raise InvalidLicenseMessage(f"Expecting license_response to be a SignedMessage, got {license_message!r}")
+            raise InvalidLicenseMessage("Expecting license_response to be a SignedMessage, got {0}".format(license_message))
 
         if license_message.type != SignedMessage.MessageType.Value("LICENSE"):
             raise InvalidLicenseMessage(
-                f"Expecting a LICENSE message, not a "
-                f"'{SignedMessage.MessageType.Name(license_message.type)}' message."
+                "Expecting a LICENSE message, not a '{0}' message.".format(SignedMessage.MessageType.Name(license_message.type))
             )
 
         licence = License()
@@ -437,11 +421,11 @@ class Cdm:
         # 2. The oemcrypto_core_message (unknown purpose) is part of the signature algorithm starting with
         #    OEM Crypto API v16 and if available, must be prefixed when HMAC'ing a signature.
 
-        computed_signature = HMAC. \
-            new(mac_key_server, digestmod=SHA256). \
-            update(license_message.oemcrypto_core_message or b""). \
-            update(license_message.msg). \
-            digest()
+        mac = HMAC.new(mac_key_server, digestmod=SHA256)
+        mac.update(license_message.oemcrypto_core_message or b"")
+        mac.update(license_message.msg)
+        computed_signature = mac.digest()
+        del mac
 
         if license_message.signature != computed_signature:
             raise SignatureMismatch("Signature Mismatch on License Message, rejecting license")
@@ -453,7 +437,7 @@ class Cdm:
 
         del session.context[licence.id.request_id]
 
-    def get_keys(self, session_id: bytes, type_: Optional[Union[int, str]] = None) -> list[Key]:
+    def get_keys(self, session_id, type_ = None):
         """
         Get Keys from the loaded License message.
 
@@ -468,7 +452,7 @@ class Cdm:
         """
         session = self.__sessions.get(session_id)
         if not session:
-            raise InvalidSession(f"Session identifier {session_id!r} is invalid.")
+            raise InvalidSession("Session identifier {0 is invalid.".format(session_id))
 
         try:
             if isinstance(type_, str):
@@ -476,9 +460,9 @@ class Cdm:
             elif isinstance(type_, int):
                 License.KeyContainer.KeyType.Name(type_)  # only test
             elif type_ is not None:
-                raise TypeError(f"Expected type_ to be a {License.KeyContainer.KeyType} or int, not {type_!r}")
+                raise TypeError("Expected type_ to be a {0} or int, not {1}".format(License.KeyContainer.KeyType, type_))
         except ValueError as e:
-            raise ValueError(f"Could not parse type_ as a {License.KeyContainer.KeyType}, {e}")
+            raise ValueError("Could not parse type_ as a {0}, {1}".format(License.KeyContainer.KeyType, e))
 
         return [
             key
@@ -486,97 +470,14 @@ class Cdm:
             if not type_ or key.type == License.KeyContainer.KeyType.Name(type_)
         ]
 
-    def decrypt(
-        self,
-        session_id: bytes,
-        input_file: Union[Path, str],
-        output_file: Union[Path, str],
-        temp_dir: Optional[Union[Path, str]] = None,
-        exists_ok: bool = False
-    ) -> int:
-        """
-        Decrypt a Widevine-encrypted file using Shaka-packager.
-        Shaka-packager is much more stable than mp4decrypt.
-
-        Parameters:
-            session_id: Session identifier.
-            input_file: File to be decrypted with Session's currently loaded keys.
-            output_file: Location to save decrypted file.
-            temp_dir: Directory to store temporary data while decrypting.
-            exists_ok: Allow overwriting the output_file if it exists.
-
-        Raises:
-            ValueError: If the input or output paths have not been supplied or are
-                invalid.
-            FileNotFoundError: If the input file path does not exist.
-            FileExistsError: If the output file path already exists. Ignored if exists_ok
-                is set to True.
-            NoKeysLoaded: No License was parsed for this Session, No Keys available.
-            EnvironmentError: If the shaka-packager executable could not be found.
-            subprocess.CalledProcessError: If the shaka-packager call returned a non-zero
-                exit code.
-        """
-        if not input_file:
-            raise ValueError("Cannot decrypt nothing, specify an input path")
-        if not output_file:
-            raise ValueError("Cannot decrypt nowhere, specify an output path")
-
-        if not isinstance(input_file, (Path, str)):
-            raise ValueError(f"Expecting input_file to be a Path or str, got {input_file!r}")
-        if not isinstance(output_file, (Path, str)):
-            raise ValueError(f"Expecting output_file to be a Path or str, got {output_file!r}")
-        if not isinstance(temp_dir, (Path, str)) and temp_dir is not None:
-            raise ValueError(f"Expecting temp_dir to be a Path or str, got {temp_dir!r}")
-
-        input_file = Path(input_file)
-        output_file = Path(output_file)
-        temp_dir_ = Path(temp_dir) if temp_dir else None
-
-        if not input_file.is_file():
-            raise FileNotFoundError(f"Input file does not exist, {input_file}")
-        if output_file.is_file() and not exists_ok:
-            raise FileExistsError(f"Output file already exists, {output_file}")
-
-        session = self.__sessions.get(session_id)
-        if not session:
-            raise InvalidSession(f"Session identifier {session_id!r} is invalid.")
-
-        if not session.keys:
-            raise NoKeysLoaded("No Keys are loaded yet, cannot decrypt")
-
-        platform = {"win32": "win", "darwin": "osx"}.get(sys.platform, sys.platform)
-        executable = get_binary_path("shaka-packager", f"packager-{platform}", f"packager-{platform}-x64")
-        if not executable:
-            raise EnvironmentError("Shaka Packager executable not found but is required")
-
-        args = [
-            f"input={input_file},stream=0,output={output_file}",
-            "--enable_raw_key_decryption",
-            "--keys", ",".join([
-                label
-                for i, key in enumerate(session.keys)
-                for label in [
-                    f"label=1_{i}:key_id={key.kid.hex}:key={key.key.hex()}",
-                    # some services need the KID blanked, e.g., Apple TV+
-                    f"label=2_{i}:key_id={'0' * 32}:key={key.key.hex()}"
-                ]
-                if key.type == "CONTENT"
-            ])
-        ]
-
-        if temp_dir_:
-            temp_dir_.mkdir(parents=True, exist_ok=True)
-            args.extend(["--temp_dir", str(temp_dir_)])
-
-        return subprocess.check_call([executable, *args])
 
     @staticmethod
     def encrypt_client_id(
-        client_id: ClientIdentification,
-        service_certificate: Union[SignedDrmCertificate, DrmCertificate],
-        key: Optional[bytes] = None,
-        iv: Optional[bytes] = None
-    ) -> EncryptedClientIdentification:
+        client_id,
+        service_certificate,
+        key = None,
+        iv = None
+    ):
         """Encrypt the Client ID with the Service's Privacy Certificate."""
         privacy_key = key or get_random_bytes(16)
         privacy_iv = iv or get_random_bytes(16)
@@ -586,7 +487,7 @@ class Cdm:
             drm_certificate.ParseFromString(service_certificate.drm_certificate)
             service_certificate = drm_certificate
         if not isinstance(service_certificate, DrmCertificate):
-            raise ValueError(f"Expecting Service Certificate to be a DrmCertificate, not {service_certificate!r}")
+            raise ValueError("Expecting Service Certificate to be a DrmCertificate, not {0}".format(service_certificate))
 
         encrypted_client_id = EncryptedClientIdentification(
             provider_id=service_certificate.provider_id,
@@ -603,23 +504,23 @@ class Cdm:
         return encrypted_client_id
 
     @staticmethod
-    def derive_context(message: bytes) -> tuple[bytes, bytes]:
+    def derive_context(message):
         """Returns 2 Context Data used for computing the AES Encryption and HMAC Keys."""
 
-        def _get_enc_context(msg: bytes) -> bytes:
+        def _get_enc_context(msg):
             label = b"ENCRYPTION"
             key_size = 16 * 8  # 128-bit
-            return label + b"\x00" + msg + key_size.to_bytes(4, "big")
+            return label + b"\x00" + msg + to_bytes(key_size, 4, "big")
 
-        def _get_mac_context(msg: bytes) -> bytes:
+        def _get_mac_context(msg):
             label = b"AUTHENTICATION"
             key_size = 32 * 8 * 2  # 512-bit
-            return label + b"\x00" + msg + key_size.to_bytes(4, "big")
+            return label + b"\x00" + msg + to_bytes(key_size, 4, "big")
 
         return _get_enc_context(message), _get_mac_context(message)
 
     @staticmethod
-    def derive_keys(enc_context: bytes, mac_context: bytes, key: bytes) -> tuple[bytes, bytes, bytes]:
+    def derive_keys(enc_context, mac_context, key):
         """
         Returns 3 keys derived from the input message.
         Key can either be a pre-provision device aes key, provision key, or a session key.
@@ -640,11 +541,10 @@ class Cdm:
         keys and verify licenses.
         """
 
-        def _derive(session_key: bytes, context: bytes, counter: int) -> bytes:
-            return CMAC. \
-                new(session_key, ciphermod=AES). \
-                update(counter.to_bytes(1, "big") + context). \
-                digest()
+        def _derive(session_key, context, counter):
+            mac = CMAC.new(session_key, ciphermod=AES)
+            mac.update(to_bytes(counter, 1, "big") + context)
+            return mac.digest()
 
         enc_key = _derive(key, enc_context, 1)
         mac_key_server = _derive(key, mac_context, 1)
