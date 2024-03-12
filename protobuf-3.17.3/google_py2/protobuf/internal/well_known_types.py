@@ -711,7 +711,7 @@ def _AddFieldPaths(node, prefix, field_mask):
     _AddFieldPaths(node[name], child_path, field_mask)
 
 
-_INT_OR_FLOAT = (int, long) + (float,)
+_INT_OR_FLOAT = (int, long, float)
 
 
 def _SetStructValue(struct_value, value):

@@ -1,10 +1,16 @@
 from uuid import UUID
 
-def to_bytes(n, length, byteorder='big'):
-  h = '%x' % n
-  s = ('0'*(len(h) % 2) + h).zfill(length*2).decode('hex')
-  return s if byteorder == 'big' else s[::-1]
-  
+import sys
+
+if sys.version_info.major == 3:
+  def to_bytes(n, length, byteorder='big'):
+    return n.to_bytes(length, byteorder)
+else:
+  def to_bytes(n, length, byteorder='big'):
+    h = '%x' % n
+    s = ('0'*(len(h) % 2) + h).zfill(length*2).decode('hex')
+    return s if byteorder == 'big' else s[::-1]
+    
 class Pssh(object):
   """Defines a PSSH box and related functions."""
 

@@ -67,6 +67,8 @@ sizer rather than when calling them.  In particular:
 __author__ = 'kenton@google.com (Kenton Varda)'
 
 import struct
+import operator
+
 
 from google.protobuf.internal import wire_format
 
@@ -370,7 +372,7 @@ def MapSizer(field_descriptor, is_message_map):
 def _VarintEncoder():
   """Return an encoder for a basic varint value (does not include tag)."""
 
-  local_int2byte = bytes
+  local_int2byte = operator.methodcaller("to_bytes", 1, "big")
   def EncodeVarint(write, value, unused_deterministic=None):
     bits = value & 0x7f
     value >>= 7
@@ -387,7 +389,7 @@ def _SignedVarintEncoder():
   """Return an encoder for a basic signed varint value (does not include
   tag)."""
 
-  local_int2byte = bytes
+  local_int2byte = operator.methodcaller("to_bytes", 1, "big")
   def EncodeSignedVarint(write, value, unused_deterministic=None):
     if value < 0:
       value += (1 << 64)

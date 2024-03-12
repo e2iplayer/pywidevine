@@ -175,7 +175,10 @@ def GetMessages(file_protos):
   """
   # The cpp implementation of the protocol buffer library requires to add the
   # message in topological order of the dependency graph.
-  file_by_name = {file_proto.name: file_proto for file_proto in file_protos}
+  file_by_name = {}
+  for file_proto in file_protos:
+    file_by_name[file_proto.name] = file_proto
+
   def _AddFile(file_proto):
     for dependency in file_proto.dependency:
       if dependency in file_by_name:
